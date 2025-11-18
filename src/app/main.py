@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.logging_conf import setup_logging
@@ -26,6 +27,15 @@ app = FastAPI(
     description="Backend pour anticiper les pannes par l'IA - MVP offline-ready",
     version=settings.api_version,
     lifespan=lifespan,
+)
+
+# Configuration CORS pour permettre les requêtes depuis le frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Configuration de la sécurité

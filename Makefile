@@ -32,11 +32,15 @@ train:  ## Entraîner les modèles
 
 run:  ## Lancer le serveur en mode dev
 	@echo "Starting server..."
-	uvicorn src.app.main:app --host 0.0.0.0 --port 8080 --reload
+	. .venv/bin/activate && PYTHONPATH=src uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload --reload-dir src
+
+run-jupyter:  ## Lancer sur Jupyter Lab (port 8000)
+	@echo "Starting server for Jupyter Lab..."
+	PYTHONPATH=src uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 run-prod:  ## Lancer le serveur en mode production
 	@echo "Starting server (production)..."
-	uvicorn src.app.main:app --host 0.0.0.0 --port 8080 --workers 4
+	. .venv/bin/activate && PYTHONPATH=src uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 4
 
 docker-build:  ## Construire l'image Docker
 	@echo "Building Docker image..."

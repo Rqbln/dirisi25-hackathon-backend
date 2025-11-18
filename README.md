@@ -402,4 +402,125 @@ Pour toute question : [contact@exemple.fr](mailto:contact@exemple.fr)
 
 ---
 
-**🚀 Bon hackathon !**
+## 🐳 Docker
+
+### Configuration
+
+Le backend est conteneurisé avec un **Dockerfile multi-stage** optimisé :
+
+**Stage 1 - Builder (Python 3.11)** :
+- Installation de `uv` (gestionnaire de paquets Python ultra-rapide)
+- Création d'un environnement virtuel
+- Installation des dépendances depuis `pyproject.toml`
+
+**Stage 2 - Runtime (Python 3.11 slim)** :
+- Image légère (~150MB)
+- Utilisateur non-root (`appuser`) pour la sécurité
+- Port **8080** exposé
+- Health check automatique sur `/health`
+- `PYTHONPATH=/app/src` configuré
+
+### Structure Docker
+
+```
+docker/
+└── Dockerfile    # Build multi-stage optimisé
+```
+
+### Utilisation avec Docker Compose
+
+**⚠️ Important** : Le backend et le frontend doivent être dans le **même dossier parent** pour que Docker Compose fonctionne.
+
+```bash
+# Structure requise
+DIRISI-Hackathon/
+├── dirisi25-hackathon-frontend/  # Contient docker/docker-compose.yml
+└── dirisi25-hackathon-backend/   # Ce repo
+```
+
+Le backend est automatiquement lancé via le `docker-compose.yml` du frontend :
+
+```bash
+# Depuis le dossier frontend
+cd ../dirisi25-hackathon-frontend
+make docker
+```
+
+Cette commande lance **les deux services** :
+- ✅ Backend FastAPI sur `http://localhost:8080`
+- ✅ Frontend React sur `http://localhost:3000`
+- ✅ Health checks automatiques
+- ✅ Réseau Docker isolé (`dirisi-network`)
+
+### Variables d'environnement Docker
+
+```yaml
+environment:
+  - PYTHONUNBUFFERED=1        # Logs en temps réel
+  - PYTHONPATH=/app/src       # Import des modules app.*
+  - LOG_LEVEL=INFO            # Niveau de log
+```
+
+### Volumes persistants
+
+```yaml
+volumes:
+  - ./data:/app/data        # Données (raw, interim, processed)
+  - ./models:/app/models    # Modèles ML sauvegardés
+```
+
+Les données et modèles sont **persistés** entre les redémarrages du container.
+
+### Health Check
+
+Le container vérifie automatiquement sa santé :
+
+```bash
+# Vérifier le statut
+docker ps
+# STATUTS : starting (5s) → healthy
+
+# Test manuel
+curl http://localhost:8080/health
+# {"status":"ok","version":"0.1.0","mode":"rule","env":"development"}
+```
+
+### Commandes Docker
+
+```bash
+# Depuis le frontend
+cd ../dirisi25-hackathon-frontend
+
+# Lancer (mode interactif, Ctrl+C pour arrêter)
+make docker
+
+# Lancer en arrière-plan
+make docker-up
+
+# Voir les logs du backend
+docker compose -f docker/docker-compose.yml logs backend -f
+
+# Arrêter
+make docker-down
+
+# Rebuild complet
+make docker-build
+```
+
+### Build standalone
+
+Pour builder uniquement le backend :
+
+```bash
+# Build l'image
+docker build -t dirisi-backend:latest -f docker/Dockerfile .
+
+# Run standalone
+docker run -p 8080:8080 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/models:/app/models \
+  -e LOG_LEVEL=DEBUG \
+  dirisi-backend:latest
+```
+
+---

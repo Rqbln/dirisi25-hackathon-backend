@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir uv
 
 # Copier les fichiers de dépendances
 COPY pyproject.toml ./
+COPY README.md ./
 
 # Créer un venv et installer les dépendances
 RUN python -m venv /opt/venv
@@ -37,6 +38,7 @@ RUN mkdir -p data/raw data/interim data/processed models && \
 # Variables d'environnement
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app/src
 
 # Passer à l'utilisateur non-root
 USER appuser

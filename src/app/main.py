@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.logging_conf import setup_logging
-from app.routers import explain, health, ingest, logs, metrics, plan, predict, topology
+from app.routers import health, logs
 from app.security import setup_security_middleware
 
 
@@ -44,12 +44,6 @@ setup_security_middleware(app)
 # Enregistrer les routers
 app.include_router(health.router)
 app.include_router(logs.router)
-app.include_router(ingest.router)
-app.include_router(topology.router)
-app.include_router(predict.router)
-app.include_router(plan.router)
-app.include_router(explain.router)
-app.include_router(metrics.router)
 
 
 @app.get("/")

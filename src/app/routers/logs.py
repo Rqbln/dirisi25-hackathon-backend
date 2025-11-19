@@ -14,21 +14,23 @@ router = APIRouter(prefix="/v1/logs", tags=["logs"])
 class LogEntry(BaseModel):
     """Modèle pour une entrée de log."""
     timestamp: str
-    firewall_id: str
-    src_ip: str
-    dst_ip: str
-    protocol: str
-    action: str
-    incident_type: str
+    firewall_id: Optional[str] = None
+    src_ip: Optional[str] = None
+    dst_ip: Optional[str] = None
+    protocol: Optional[str] = None
+    action: Optional[str] = None
     bug_type: Optional[str] = None
-    attack_type: Optional[str] = None
+    severity: Optional[str] = None  # Low, Medium, High
+    type: Optional[str] = None  # Bug ou Attack
 
 
 class LogSearchRequest(BaseModel):
     """Requête de recherche de logs."""
     start_timestamp: str
     end_timestamp: str
-    incident_types: Optional[List[str]] = None  # ["OK", "Bug", "Attack"]
+    types: Optional[List[str]] = None  # ["Bug", "Attack"]
+    severities: Optional[List[str]] = None  # ["Low", "Medium", "High"]
+    bug_types: Optional[List[str]] = None  # Types spécifiques d'anomalies
 
 
 class LogSearchResponse(BaseModel):
@@ -44,10 +46,20 @@ class LogSearchResponse(BaseModel):
 
 def get_logs_directory() -> Path:
     """Retourne le chemin vers le dossier des logs analysés."""
+    # Sur Jupyter Lab: /workspace/dataset-team-9 (dossier des datasets)
+    jupyter_dataset_path = Path("/workspace/dataset-team-9")
+    if jupyter_dataset_path.exists():
+        return jupyter_dataset_path
+    
     # En Docker, les logs sont montés dans /app/data/results
     docker_path = Path("/app/data/results")
     if docker_path.exists():
         return docker_path
+    
+    # Sur Jupyter Lab: /workspace/results-team-9/data/results (copie locale)
+    jupyter_results_path = Path("/workspace/results-team-9/data/results")
+    if jupyter_results_path.exists():
+        return jupyter_results_path
     
     # En local: depuis src/app/routers/logs.py, remonter 5 fois puis aller dans datasets/results
     # logs.py -> routers -> app -> src -> dirisi25-hackathon-backend -> DIRISI-Hackathon -> datasets/results
@@ -57,7 +69,7 @@ def get_logs_directory() -> Path:
     
     raise HTTPException(
         status_code=500,
-        detail=f"Impossible de trouver le dossier des logs analysés. Chemin testé: {local_path.absolute()}"
+        detail=f"Impossible de trouver le dossier des logs analysés. Chemins testés: {jupyter_dataset_path}, {docker_path}, {jupyter_results_path}, {local_path.absolute()}"
     )
 
 
@@ -87,9 +99,11 @@ def load_logs_for_month(month: str, year: int = 2025) -> Optional[pd.DataFrame]:
     
     try:
         df = pd.read_csv(filepath)
-        # Nettoyer les lignes corrompues
-        df = df[df['timestamp'].notna()]
-        df = df[~df['timestamp'].str.startswith('CORRUPTED_LINE', na=False)]
+        # Convertir les timestamps avec gestion des erreurs
+        df['timestamp_dt'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
+        # Supprimer les lignes avec timestamps invalides
+        df = df[df['timestamp_dt'].notna()].copy()
+        # Garder la colonne timestamp originale pour l'API
         return df
     except Exception as e:
         print(f"Erreur lors du chargement de {filename}: {e}")
@@ -149,10 +163,7 @@ async def search_logs(request: LogSearchRequest) -> LogSearchResponse:
         # Concaténer tous les DataFrames
         df_all = pd.concat(all_logs, ignore_index=True)
         
-        # Convertir les timestamps et filtrer (avec timezone UTC)
-        df_all['timestamp_dt'] = pd.to_datetime(df_all['timestamp'], errors='coerce', utc=True)
-        df_all = df_all[df_all['timestamp_dt'].notna()]
-        
+        # La colonne timestamp_dt existe déjà (créée dans load_logs_for_month)
         # Convertir les datetime Python en Timestamp pandas pour la comparaison
         start_ts = pd.Timestamp(start_dt)
         end_ts = pd.Timestamp(end_dt)
@@ -161,14 +172,22 @@ async def search_logs(request: LogSearchRequest) -> LogSearchResponse:
         mask = (df_all['timestamp_dt'] >= start_ts) & (df_all['timestamp_dt'] <= end_ts)
         df_filtered = df_all[mask]
         
-        # Filtrer par type d'incident si spécifié
-        if request.incident_types:
-            df_filtered = df_filtered[df_filtered['incident_type'].isin(request.incident_types)]
+        # Filtrer par type si spécifié
+        if request.types:
+            df_filtered = df_filtered[df_filtered['type'].isin(request.types)]
+        
+        # Filtrer par sévérité si spécifié
+        if request.severities:
+            df_filtered = df_filtered[df_filtered['severity'].isin(request.severities)]
+        
+        # Filtrer par bug_type si spécifié
+        if request.bug_types:
+            df_filtered = df_filtered[df_filtered['bug_type'].isin(request.bug_types)]
         
         # Compter les types d'incidents
-        ok_count = len(df_filtered[df_filtered['incident_type'] == 'OK'])
-        bug_count = len(df_filtered[df_filtered['incident_type'] == 'Bug'])
-        attack_count = len(df_filtered[df_filtered['incident_type'] == 'Attack'])
+        ok_count = 0  # Plus de catégorie OK
+        bug_count = len(df_filtered[df_filtered['type'] == 'Bug'])
+        attack_count = len(df_filtered[df_filtered['type'] == 'Attack'])
         
         # Convertir en liste de LogEntry (limiter à 1000 pour la performance)
         df_result = df_filtered.head(1000)
@@ -176,14 +195,14 @@ async def search_logs(request: LogSearchRequest) -> LogSearchResponse:
         for _, row in df_result.iterrows():
             logs.append(LogEntry(
                 timestamp=str(row['timestamp']),
-                firewall_id=str(row['firewall_id']) if pd.notna(row['firewall_id']) else '',
-                src_ip=str(row['src_ip']) if pd.notna(row['src_ip']) else '',
-                dst_ip=str(row['dst_ip']) if pd.notna(row['dst_ip']) else '',
-                protocol=str(row['protocol']) if pd.notna(row['protocol']) else '',
-                action=str(row['action']) if pd.notna(row['action']) else '',
-                incident_type=str(row['incident_type']) if pd.notna(row['incident_type']) else '',
-                bug_type=str(row['bug_type']) if pd.notna(row['bug_type']) and row['bug_type'] else None,
-                attack_type=str(row['attack_type']) if pd.notna(row['attack_type']) and row['attack_type'] else None
+                firewall_id=str(row['firewall_id']) if pd.notna(row['firewall_id']) else None,
+                src_ip=str(row['src_ip']) if pd.notna(row['src_ip']) else None,
+                dst_ip=str(row['dst_ip']) if pd.notna(row['dst_ip']) else None,
+                protocol=str(row['protocol']) if pd.notna(row['protocol']) else None,
+                action=str(row['action']) if pd.notna(row['action']) else None,
+                bug_type=str(row['bug_type']) if pd.notna(row['bug_type']) else None,
+                severity=str(row['severity']) if pd.notna(row['severity']) else None,
+                type=str(row['type']) if pd.notna(row['type']) else None
             ))
         
         return LogSearchResponse(

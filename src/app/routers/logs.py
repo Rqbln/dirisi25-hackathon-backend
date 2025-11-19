@@ -39,6 +39,7 @@ class LogSearchResponse(BaseModel):
     ok_count: int
     bug_count: int
     attack_count: int
+    firewall_counts: dict  # Comptage par firewall_id
     logs: List[LogEntry]
     start_timestamp: str
     end_timestamp: str
@@ -155,6 +156,7 @@ async def search_logs(request: LogSearchRequest) -> LogSearchResponse:
                 ok_count=0,
                 bug_count=0,
                 attack_count=0,
+                firewall_counts={},
                 logs=[],
                 start_timestamp=request.start_timestamp,
                 end_timestamp=request.end_timestamp
@@ -189,6 +191,9 @@ async def search_logs(request: LogSearchRequest) -> LogSearchResponse:
         bug_count = len(df_filtered[df_filtered['type'] == 'Bug'])
         attack_count = len(df_filtered[df_filtered['type'] == 'Attack'])
         
+        # Compter par firewall (sur TOUS les logs filtrés, pas juste les 1000 premiers)
+        firewall_counts = df_filtered['firewall_id'].fillna('Unknown').value_counts().to_dict()
+        
         # Convertir en liste de LogEntry (limiter à 1000 pour la performance)
         df_result = df_filtered.head(1000)
         logs = []
@@ -210,6 +215,7 @@ async def search_logs(request: LogSearchRequest) -> LogSearchResponse:
             ok_count=ok_count,
             bug_count=bug_count,
             attack_count=attack_count,
+            firewall_counts=firewall_counts,
             logs=logs,
             start_timestamp=request.start_timestamp,
             end_timestamp=request.end_timestamp

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.logging_conf import setup_logging
 from app.routers import health, logs
+from app.routers.infer import router as infer_router
 from app.security import setup_security_middleware
 
 
@@ -43,6 +44,7 @@ setup_security_middleware(app)
 
 # Enregistrer les routers
 app.include_router(health.router)
+app.include_router(infer_router)
 app.include_router(logs.router)
 
 

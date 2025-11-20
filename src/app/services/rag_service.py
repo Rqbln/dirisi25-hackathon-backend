@@ -43,11 +43,28 @@ class RAGService:
         
         # Charger ou créer le vectorstore
         if vectorstore_path.exists():
-            print("📂 Chargement du vectorstore existant...")
+            print(f"📂 Chargement du vectorstore existant: {vectorstore_path}")
             self.vectorstore = Chroma(
                 persist_directory=str(vectorstore_path),
                 embedding_function=self.embeddings
             )
+            
+            # Vérifier le nombre de documents
+            try:
+                collection = self.vectorstore._collection
+                doc_count = collection.count()
+                print(f"   ℹ️ Vectorstore contient {doc_count} documents")
+                
+                if doc_count == 0:
+                    print("   ⚠️ VECTORSTORE VIDE! Aucun document n'a été indexé.")
+                    print("   💡 Vérifiez que les PDFs sont présents dans knowledge-base/docs/")
+                else:
+                    # Afficher un exemple de document
+                    sample = collection.peek(limit=1)
+                    if sample and sample.get('documents'):
+                        print(f"   📄 Exemple de document: {sample['documents'][0][:100]}...")
+            except Exception as e:
+                print(f"   ⚠️ Impossible de compter les documents: {e}")
         else:
             print("📚 Création du vectorstore depuis les documents...")
             self._create_vectorstore(vectorstore_path)
@@ -104,7 +121,7 @@ class RAGService:
         """Formate les documents récupérés."""
         return "\n\n".join(doc.page_content for doc in docs)
     
-    def analyze_attack(self, log_entry: Dict[str, Any]) -> str:
+    def analyze_attack(self, log_entry: Dict[str, Any]) -> Dict[str, Any]:
         """Analyse automatique et contextuelle d'un log (attaque ou bug) avec RAG."""
         
         # Construire une question enrichie pour le RAG
@@ -176,15 +193,52 @@ Réponse:"""
         
         # Générer la réponse
         try:
+            print(f"🔍 Query envoyée au retriever: {query[:200]}...")
+            
+            # Récupérer les documents sources
+            source_docs = self.retriever.invoke(query)
+            
+            print(f"📚 Retriever a trouvé {len(source_docs)} documents")
+            if source_docs:
+                print(f"   Premier doc - Source: {source_docs[0].metadata.get('source', 'N/A')}")
+                print(f"   Premier doc - Page: {source_docs[0].metadata.get('page', 'N/A')}")
+                print(f"   Premier doc - Contenu (100 car): {source_docs[0].page_content[:100]}...")
+            else:
+                print("   ⚠️ AUCUN DOCUMENT TROUVÉ PAR LE RETRIEVER!")
+            
+            # Générer l'analyse
             answer = chain.invoke(query)
+            
             # Sauvegarder dans l'historique pour le chat
             self.chat_history = [
                 HumanMessage(content=query),
                 AIMessage(content=answer)
             ]
-            return answer
+            
+            # Formatter les sources
+            sources = [
+                {
+                    "content": doc.page_content[:500],  # Premier 500 caractères
+                    "metadata": {
+                        "source": doc.metadata.get("source", "Inconnu"),
+                        "page": doc.metadata.get("page", "N/A")
+                    }
+                }
+                for doc in source_docs
+            ]
+            
+            print(f"✅ Analyse terminée - {len(sources)} sources trouvées (après formatage)")
+            
+            # Retourner avec les sources
+            return {
+                "analysis": answer,
+                "sources": sources
+            }
         except Exception as e:
-            return f"Erreur lors de l'analyse: {str(e)}"
+            return {
+                "analysis": f"Erreur lors de l'analyse: {str(e)}",
+                "sources": []
+            }
     
     def chat(self, question: str, session_id: str = "default") -> Dict[str, Any]:
         """Continue la conversation avec le RAG en tenant compte du contexte."""

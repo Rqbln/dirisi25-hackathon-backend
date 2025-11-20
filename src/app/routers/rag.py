@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
 class AttackAnalysisResponse(BaseModel):
     """Réponse d'analyse d'attaque."""
     analysis: str
+    sources: list
     log_summary: Dict[str, Any]
 
 
@@ -44,10 +45,11 @@ async def analyze_attack(request: AttackAnalysisRequest) -> AttackAnalysisRespon
     """
     try:
         rag = get_rag_service()
-        analysis = rag.analyze_attack(request.log_entry)
+        result = rag.analyze_attack(request.log_entry)
         
         return AttackAnalysisResponse(
-            analysis=analysis,
+            analysis=result.get("analysis", ""),
+            sources=result.get("sources", []),
             log_summary=request.log_entry
         )
     except Exception as e:

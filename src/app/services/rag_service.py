@@ -8,11 +8,12 @@ from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.messages import HumanMessage, AIMessage
+
+from app.services.ovh_llm import OVH_LLM
 
 
 class RAGService:
@@ -51,17 +52,17 @@ class RAGService:
             print("📚 Création du vectorstore depuis les documents...")
             self._create_vectorstore(vectorstore_path)
         
-        # Créer le retriever
-        self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": 3})
+        # Créer le retriever avec plus de contexte
+        self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": 5})
         
-        # Initialiser le LLM
-        self.llm = ChatOpenAI(
-            model="gpt-3.5-turbo",
+        # Initialiser le LLM OVH (même logique que Part_LLM.py)
+        self.llm = OVH_LLM(
+            model="Qwen2.5-Coder-32B-Instruct",
             temperature=0.3,
-            api_key=os.getenv("OPENAI_API_KEY", "")
+            max_tokens=2048
         )
         
-        print("✅ RAG initialisé")
+        print("✅ RAG initialisé avec OVH LLM")
     
     def _create_vectorstore(self, vectorstore_path: Path):
         """Crée le vectorstore depuis les documents PDF."""
@@ -83,10 +84,10 @@ class RAGService:
         )
         documents = loader.load()
         
-        # Découper les documents
+        # Découper les documents avec plus de contexte
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
+            chunk_size=2000,
+            chunk_overlap=500
         )
         texts = text_splitter.split_documents(documents)
         
@@ -104,40 +105,70 @@ class RAGService:
         return "\n\n".join(doc.page_content for doc in docs)
     
     def analyze_attack(self, log_entry: Dict[str, Any]) -> str:
-        """Analyse initiale d'une attaque basée sur un log."""
-        # Construire le contexte du log
-        log_context = f"""
-Analyse de l'attaque détectée:
+        """Analyse automatique et contextuelle d'un log (attaque ou bug) avec RAG."""
+        
+        # Construire une question enrichie pour le RAG
+        bug_type = log_entry.get('bug_type', 'N/A')
+        severity = log_entry.get('severity', 'N/A')
+        src_ip = log_entry.get('src_ip', 'N/A')
+        dst_ip = log_entry.get('dst_ip', 'N/A')
+        protocol = log_entry.get('protocol', 'N/A')
+        action = log_entry.get('action', 'N/A')
+        firewall = log_entry.get('firewall_id', 'N/A')
+        timestamp = log_entry.get('timestamp', 'N/A')
+        
+        # Question détaillée pour le retriever
+        query = f"""
+Log de sécurité firewall détecté:
+- Type: {bug_type}
+- Sévérité: {severity}
+- Source: {src_ip} vers Destination: {dst_ip}
+- Protocole: {protocol}
+- Action: {action}
+- Firewall: {firewall}
+- Timestamp: {timestamp}
 
-Type d'attaque: {log_entry.get('bug_type', 'N/A')}
-Sévérité: {log_entry.get('severity', 'N/A')}
-Timestamp: {log_entry.get('timestamp', 'N/A')}
-Firewall: {log_entry.get('firewall_id', 'N/A')}
-IP Source: {log_entry.get('src_ip', 'N/A')}
-IP Destination: {log_entry.get('dst_ip', 'N/A')}
-Protocole: {log_entry.get('protocol', 'N/A')}
-Action: {log_entry.get('action', 'N/A')}
-
-Fournis une analyse détaillée de cette attaque, les risques associés, et les recommandations de mitigation.
+Analyse cette entrée réseau et fournis:
+1. Nature exacte de l'anomalie ou attaque
+2. Gravité et impact potentiel
+3. Recommandations de mitigation concrètes
+4. Mesures préventives
 """
         
-        # Créer le prompt
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """Tu es un expert en cybersécurité. 
-Utilise le contexte suivant pour analyser l'attaque:
+        # Template amélioré avec contexte riche
+        template = """Tu es un expert en cybersécurité réseau et analyse de logs firewall.
+
+Voici les informations techniques pertinentes extraites de la base de connaissances:
 
 {context}
 
-Fournis une analyse structurée avec:
-1. Nature de l'attaque
-2. Risques associés
-3. Recommandations de mitigation"""),
-            ("human", "{question}")
-        ])
+---
+
+Sur la base de ces informations techniques et de ton expertise, analyse le log suivant:
+
+{query}
+
+Fournis une analyse détaillée et structurée incluant:
+- La nature technique de l'anomalie/attaque
+- Les risques et impacts potentiels
+- Les recommandations de mitigation immédiate
+- Les mesures préventives à mettre en place
+
+Sois précis, concret et actionnable. Utilise les informations du contexte pour enrichir ton analyse.
+
+Réponse:"""
+        
+        prompt = PromptTemplate(
+            input_variables=["context", "query"],
+            template=template
+        )
         
         # Créer la chaîne RAG avec LCEL
         chain = (
-            {"context": self.retriever | self._format_docs, "question": RunnablePassthrough()}
+            {
+                "context": self.retriever | self._format_docs,
+                "query": RunnablePassthrough()
+            }
             | prompt
             | self.llm
             | StrOutputParser()
@@ -145,10 +176,10 @@ Fournis une analyse structurée avec:
         
         # Générer la réponse
         try:
-            answer = chain.invoke(log_context)
-            # Réinitialiser l'historique pour une nouvelle analyse
+            answer = chain.invoke(query)
+            # Sauvegarder dans l'historique pour le chat
             self.chat_history = [
-                HumanMessage(content=log_context),
+                HumanMessage(content=query),
                 AIMessage(content=answer)
             ]
             return answer
@@ -156,25 +187,44 @@ Fournis une analyse structurée avec:
             return f"Erreur lors de l'analyse: {str(e)}"
     
     def chat(self, question: str, session_id: str = "default") -> Dict[str, Any]:
-        """Continue la conversation avec le RAG."""
+        """Continue la conversation avec le RAG en tenant compte du contexte."""
         try:
-            # Créer le prompt avec historique
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", """Tu es un expert en cybersécurité. 
-Utilise le contexte suivant pour répondre:
+            # Construire l'historique formaté
+            history_text = "\n".join([
+                f"{'Question' if isinstance(msg, HumanMessage) else 'Réponse'}: {msg.content[:500]}"
+                for msg in self.chat_history[-4:]  # Garder les 2 derniers échanges
+            ])
+            
+            # Template pour chat contextuel
+            template = """Tu es un expert en cybersécurité. 
+
+Informations techniques de la base de connaissances:
 
 {context}
 
-Réponds de manière concise et précise."""),
-                MessagesPlaceholder(variable_name="chat_history"),
-                ("human", "{question}")
-            ])
+---
+
+Historique de la conversation:
+{history}
+
+---
+
+Question actuelle: {question}
+
+Réponds de manière précise et technique en t'appuyant sur le contexte et l'historique.
+
+Réponse:"""
+            
+            prompt = PromptTemplate(
+                input_variables=["context", "history", "question"],
+                template=template
+            )
             
             # Créer la chaîne
             chain = (
                 {
                     "context": self.retriever | self._format_docs,
-                    "chat_history": lambda x: self.chat_history,
+                    "history": lambda x: history_text,
                     "question": RunnablePassthrough()
                 }
                 | prompt
@@ -210,12 +260,28 @@ Réponds de manière concise et précise."""),
 
 # Instance globale du RAG (chargé au démarrage)
 _rag_service = None
+_rag_init_error = None
 
 
 def get_rag_service() -> RAGService:
     """Retourne l'instance du service RAG (singleton)."""
-    global _rag_service
-    if _rag_service is None:
-        _rag_service = RAGService()
+    global _rag_service, _rag_init_error
+    
+    if _rag_service is None and _rag_init_error is None:
+        try:
+            print("🔧 Initialisation du service RAG...")
+            _rag_service = RAGService()
+        except Exception as e:
+            _rag_init_error = str(e)
+            print(f"❌ Erreur initialisation RAG: {_rag_init_error}")
+            raise RuntimeError(
+                f"Impossible d'initialiser le service RAG: {_rag_init_error}"
+            )
+    
+    if _rag_init_error is not None:
+        raise RuntimeError(
+            f"Service RAG non disponible (erreur d'initialisation): {_rag_init_error}"
+        )
+    
     return _rag_service
 

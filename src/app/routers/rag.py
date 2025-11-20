@@ -99,7 +99,8 @@ async def rag_health():
         return {
             "status": "ok",
             "vectorstore_loaded": rag.vectorstore is not None,
-            "qa_chain_ready": rag.qa_chain is not None
+            "llm_ready": rag.llm is not None,
+            "retriever_ready": rag.retriever is not None
         }
     except Exception as e:
         return {

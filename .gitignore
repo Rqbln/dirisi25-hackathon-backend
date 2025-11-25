@@ -71,6 +71,11 @@ data/interim/*.csv
 data/processed/*.parquet
 data/processed/*.csv
 
+# Vector Store (generated)
+data/knowledge-base/vectorstore/
+*.sqlite3
+*.bin
+
 # Models (trained)
 models/*.joblib
 models/*.pkl

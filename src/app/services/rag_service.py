@@ -82,7 +82,7 @@ class RAGService:
 
         # Initialiser le LLM Gemini
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             temperature=0.3,
             max_tokens=2048,
             convert_system_message_to_human=True,
@@ -171,13 +171,13 @@ Sur la base de ces informations techniques et de ton expertise, analyse le log s
 
 {query}
 
-Fournis une analyse détaillée et structurée incluant:
-- La nature technique de l'anomalie/attaque
-- Les risques et impacts potentiels
-- Les recommandations de mitigation immédiate
-- Les mesures préventives à mettre en place
+Fournis une analyse EXHAUSTIVE, DÉTAILLÉE et structurée incluant:
+- La nature technique de l'anomalie/attaque (explique le fonctionnement en détail)
+- Les risques et impacts potentiels (business et technique)
+- Les recommandations de mitigation immédiate (commandes, configurations)
+- Les mesures préventives à mettre en place (architecture, politiques)
 
-Sois précis, concret et actionnable. Utilise les informations du contexte pour enrichir ton analyse.
+Ne sois pas bref. Développe chaque point avec des explications techniques approfondies. Utilise les informations du contexte pour enrichir ton analyse.
 
 Réponse:"""
 
@@ -258,7 +258,8 @@ Historique de la conversation:
 
 Question actuelle: {question}
 
-Réponds de manière précise et technique en t'appuyant sur le contexte et l'historique.
+Réponds de manière EXHAUSTIVE, PRÉCISE et TECHNIQUE en t'appuyant sur le contexte et l'historique.
+Ne sois pas bref. Développe tes réponses.
 
 Réponse:"""
 

@@ -71,6 +71,19 @@ data/interim/*.csv
 data/processed/*.parquet
 data/processed/*.csv
 
+# datasets
+datasets/raw/*.csv
+datasets/raw/*.json
+datasets/raw/*.parquet
+datasets/raw/*.pkl
+datasets/raw/*.h5
+
+datasets/results/*.csv
+datasets/results/*.json
+datasets/results/*.parquet
+datasets/results/*.pkl
+datasets/results/*.h5
+
 # Models (trained)
 models/*.joblib
 models/*.pkl
